@@ -13,11 +13,10 @@ run_commands(){
 cd src/
 
 # get data form data/custom aka. cohort and values into shape
-# python create_dataset_from_custom.py
+python create_dataset_from_custom.py
 
 # preprocess dataset like physionet12
-# python preproccess_aumc.py
-
+python preprocess_aumc.py
 # Strats custom with pretrain for 100 epochs
 python main.py --pretrain 1 --dataset aumc --model_type strats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-4 --max_epochs 100
 template="python main.py --dataset aumc --model_type strats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-5 --load_ckpt_path ../outputs/aumc/pretrain/checkpoint_best.bin"

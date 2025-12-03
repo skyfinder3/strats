@@ -18,22 +18,22 @@ def read_ts(raw_data_path, set_name):
         if len(data)<=5:
             continue
         data = data.loc[data.Value>=0] # neg Value indicates missingness.
-        data['RecordID'] = f[:-4]
+        data['AdmissionID'] = f[:-4]
         ts.append(data)
     ts = pd.concat(ts)
     ts.Time = ts.Time.apply(lambda x:int(x[:2])*60
                             +int(x[3:])) # No. of minutes since admission.
     ts.rename(columns={'Time':'minute', 'Parameter':'variable', 
-                       'Value':'value', 'RecordID':'ts_id'}, inplace=True)
+                       'Value':'value', 'AdmissionID':'ts_id'}, inplace=True)
     return ts
 
 
 def read_outcomes(raw_data_path, set_name):
     oc = pd.read_csv(raw_data_path+'/Outcomes-'+set_name+'.txt', 
-                     usecols=['RecordID', 'Onset_time', 'Sepsis3']) # TODO maybe adjust??
+                     usecols=['AdmissionID', 'Sepsis3']) # TODO maybe adjust??
     oc['subset'] = set_name
-    oc.RecordID = oc.RecordID.astype(str)
-    oc.rename(columns={'RecordID':'ts_id', 'Onset_time':'onset_time', 
+    oc.AdmissionID = oc.AdmissionID.astype(str)
+    oc.rename(columns={'AdmissionID':'ts_id',
                        'Sepsis3':'sepsis_3'}, inplace=True)
     return oc
 

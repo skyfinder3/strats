@@ -3,11 +3,13 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import re
+from datetime import timedelta
 
 # specify where the custom data is found
 data_path = r"..\data\custom\values"
 out_path = r"..\data\unprocessed\ml_health\set-a"
 cohort_path = r"..\data\custom\cohort"
+matias_path = r"..\data\custom\Matias"
 
 def format_time(minutes):
     """Convert minutes since admission to HH:MM string."""
@@ -160,68 +162,112 @@ def write_static_measurements(df, out_path):
         out_df.to_csv(filename, index=False)
 
 
-def process_values():
-    # loop through files in the directory WITH progress bar
-    csv_files = [f for f in os.listdir(data_path) if f.endswith(".csv")]
+def process_values(in_path, out_path):
+    # read csv
+    df_values = pd.read_csv(in_path)
+    
+    # parse datetimes (allow mixed formats)
+    df_values["event_datetime"] = pd.to_datetime(
+        df_values["event_datetime"],
+        errors="coerce",
+        utc=True
+    )
 
-    for filename in tqdm(csv_files, desc="Processing files"):
-        full_path = os.path.join(data_path, filename)
-        print("\nLoading:", full_path)
+    # group by visit_occurrence_id
+    grouped = list(df_values.groupby("visit_occurrence_id"))  # convert to list to know total length
+    
+    # --- wrap with tqdm for progress bar ---
+    for visit_id, g in tqdm(grouped, desc="Processing admissions"):
+        # sort by datetime, NaT last
+        g = g.sort_values("event_datetime", na_position="last")
 
-        df = pd.read_csv(full_path)
-        triplets_df = df[["admissionid", "time", "item", "value"]]
+        # first valid datetime as t=0
+        if g["event_datetime"].notna().any():
+            t0 = g["event_datetime"].min()
+        else:
+            t0 = pd.Timestamp(0)
 
-        # group by admissionid
-        df_by_admission = {
-            admission_id: group.reset_index(drop=True)
-            for admission_id, group in triplets_df.groupby("admissionid")
+        rows = []
+        
+        # --- Required static vars ---
+        required_vars = ["AdmissionID", "Age", "Gender", "Height"]
+        required_values = {
+            "AdmissionID": visit_id,
+            "Age": -1,
+            "Gender": -1,
+            "Height": -1
         }
 
-        # progress bar for admissions in this file
-        for admission_id, group_df in tqdm(df_by_admission.items(),
-                                        desc=f"Admissions in {filename}",
-                                        leave=False):
-            write_measurements(admission_id, group_df)
+        # fill static values from dataframe
+        for _, row in g.iterrows():
+            var = row["variable_name"]
+            val = row["value"]
+            if pd.isna(val):
+                val = -1
+            else:
+                val = round(val, 2)
 
-def process_static_values():
-    filename = os.path.join(cohort_path, "sepsis_patients_legacy.csv")
-    df = pd.read_csv(filename)
+            if var == "female_static":
+                required_values["Gender"] = 1 if val == 1.0 else 0
+            elif var in required_vars and var != "AdmissionID":
+                required_values[var] = val
 
-    write_static_measurements(df, out_path)
+        # append required vars in order at t=00:00
+        for var in required_vars:
+            rows.append(["00:00", var, required_values[var]])
 
-def create_outcomes():
-    filename = os.path.join(cohort_path, "sepsis_patients_legacy.csv")
-    df = pd.read_csv(filename)
+        # append remaining events
+        for _, row in g.iterrows():
+            var = row["variable_name"]
+            if var in required_vars or var == "female_static":
+                continue
 
-    # --- Impute length of stay ---
-    mean_stay = df["lengthofstay"].mean()
-    sd_stay = df["lengthofstay"].std()
-    mask = df["lengthofstay"].isna()
-    df.loc[mask, "lengthofstay"] = np.random.normal(mean_stay, sd_stay, mask.sum())
+            dt = row["event_datetime"]
+            if pd.isna(dt):
+                time_str = "00:00"
+            else:
+                delta = dt - t0
+                total_minutes = int(delta.total_seconds() // 60)
+                hours = total_minutes // 60
+                minutes = total_minutes % 60
+                time_str = f"{hours:02d}:{minutes:02d}"
 
-    df["RecordID"] = df["admissionid"].astype(str)
+            val = row["value"]
+            if pd.isna(val):
+                val = -1
+            else:
+                val = round(val, 2)
+            # only look at first 48 hours
+            if hours <= 47:
+                rows.append([time_str, var, val])
 
-    # --- Create random Sepsis3 column (0 or 1) ---
-    df["Sepsis3"] = np.random.randint(0, 2, size=len(df))
+        df_out = pd.DataFrame(rows, columns=["Time", "Parameter", "Value"])
 
-    # --- Create onset_time ---
-    # For sepsis cases (1): draw from normal distribution
-    # For non-sepsis cases (0): use unmodified lengthofstay
-    onset_time = np.where(
-        df["Sepsis3"] == 1,
-        np.random.normal(mean_stay, sd_stay, len(df)).astype(int),
-        df["lengthofstay"]
-    )
-    # Clip negative values to zero
-    onset_time = np.clip(onset_time, a_min=0, a_max=None)
-    df["Onset_time"] = onset_time
+        # save
+        filename = os.path.join(out_path, f"{visit_id}.txt")
+        df_out.to_csv(filename, index=False)
 
+def create_outcomes(path, out_path):
+    # get admission ids of the dataset
+    
+    df_admissions = pd.read_csv(path)
+    
+    # get sepsis cohort to produce labels
+    sepsis_cohort = os.path.join(cohort_path, "sepsis_patients_legacy.csv")
+    # get cohort that has sepsis for inital label config
+    df_sepsis_cohort = pd.read_csv(sepsis_cohort)
+
+    outcome_df = pd.DataFrame()
+
+    outcome_df["AdmissionID"] = df_admissions["admission_id"]
+    outcome_df["Sepsis3"] = outcome_df["AdmissionID"].isin(df_sepsis_cohort["admissionid"]).astype(int)
+    
     # --- Select output columns ---
-    df_out = df[["RecordID", "Onset_time", "Sepsis3"]]
+    outcome_df[["AdmissionID", "Sepsis3"]]
 
     # --- Write to txt file (CSV-style) ---
-    out = os.path.join(r"C:\Users\Skyfinder\Projects\STraTS\data\unprocessed\ml_health", "Outcomes-a.txt")
-    df_out.to_csv(out, index=False)
+    out = os.path.join(out_path, "Outcomes-a.txt")
+    outcome_df.to_csv(out, index=False)
 
     
 
@@ -233,12 +279,14 @@ def prep_dirs():
     for f in os.listdir(out_path):
         os.remove(os.path.join(out_path, f))
 
+
+os.chdir(r"C:\Users\Skyfinder\Projects\STraTS\src")
 # clear old output and make sure the directories are set up
 # prep_dirs()
 
 ## run
-# process_static_values()
-# process_values()
-# create_outcomes()
+
+process_values(os.path.join(r"..\data\custom\Matias", "output.csv"), r"..\data\unprocessed\ml_health\set-a")
+create_outcomes(os.path.join(r"..\data\custom\Matias", "Dataset_corrected.csv"), r"..\data\unprocessed\ml_health")
 
 
