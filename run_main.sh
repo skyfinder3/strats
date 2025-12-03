@@ -22,6 +22,11 @@ python main.py --pretrain 1 --dataset physionet_2012 --model_type strats --hid_d
 template="python main.py --dataset physionet_2012 --model_type strats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-5 --load_ckpt_path ../outputs/physionet_2012/pretrain/checkpoint_best.bin"
 run_commands "\${template}"
 
+# Strats custom
+python main.py --pretrain 1 --dataset aumc --model_type strats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-4 --max_epochs 100
+template="python main.py --dataset aumc --model_type strats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-5 --load_ckpt_path ../outputs/aumc/pretrain/checkpoint_best.bin"
+run_commands "\${template}"
+
 # Strats (ss-) mimic_iii
 template="python main.py --dataset mimic_iii --model_type strats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-4"
 run_commands "\${template}"

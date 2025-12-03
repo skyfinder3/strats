@@ -5,7 +5,7 @@ import pickle
 import numpy as np
 
 
-RAW_DATA_PATH = r'C:\Users\Skyfinder\Desktop\UvA\Reasoning With health\physionet\physionet_2012\physionet_2012'
+RAW_DATA_PATH = r'C:\Users\Skyfinder\Projects\STraTS\data\unprocessed\ml_health'
 
 
 def read_ts(raw_data_path, set_name):
@@ -30,18 +30,20 @@ def read_ts(raw_data_path, set_name):
 
 def read_outcomes(raw_data_path, set_name):
     oc = pd.read_csv(raw_data_path+'/Outcomes-'+set_name+'.txt', 
-                     usecols=['RecordID', 'Length_of_stay', 'In-hospital_death'])
+                     usecols=['RecordID', 'Onset_time', 'Sepsis3']) # TODO maybe adjust??
     oc['subset'] = set_name
     oc.RecordID = oc.RecordID.astype(str)
-    oc.rename(columns={'RecordID':'ts_id', 'Length_of_stay':'length_of_stay', 
-                       'In-hospital_death':'in_hospital_mortality'}, inplace=True)
+    oc.rename(columns={'RecordID':'ts_id', 'Onset_time':'onset_time', 
+                       'Sepsis3':'sepsis_3'}, inplace=True)
     return oc
 
 
 ts = pd.concat([read_ts(RAW_DATA_PATH, set_name) 
-                for set_name in ['a','b','c']])
+                for set_name in ['a']])
 oc = pd.concat([read_outcomes(RAW_DATA_PATH, set_name) 
-                for set_name in ['a','b','c']])
+                for set_name in ['a']])
+# TODO If we want other sets, do that here, dont think we need to though
+
 ts_ids = sorted(list(ts.ts_id.unique()))
 oc = oc.loc[oc.ts_id.isin(ts_ids)]
 
@@ -55,17 +57,18 @@ for val in [4,3,2,1]:
     ts.loc[kk, 'variable'] = 'ICUType_'+str(val)
 ts.loc[ii, 'value'] = 1
     
-# Generate split.
-train_valid_ids = list(oc.loc[oc.subset!='a'].ts_id)
+
+# make test train val split
+all_ids = list(oc.ts_id)
 np.random.seed(123)
-np.random.shuffle(train_valid_ids)
-bp = int(0.8*len(train_valid_ids))
-train_ids = train_valid_ids[:bp]
-valid_ids = train_valid_ids[bp:]
-test_ids = np.array(oc.loc[oc.subset=='a'].ts_id)
-oc.drop(columns='subset', inplace=True)
+np.random.shuffle(all_ids)
+bp1 = int(0.7 * len(all_ids))   # 70% train
+bp2 = int(0.85 * len(all_ids))  # next 15% val
+train_ids = all_ids[:bp1]
+valid_ids = all_ids[bp1:bp2]
+test_ids = all_ids[bp2:]
 
 # Store data.
 os.makedirs('../data/processed', exist_ok=True)
 pickle.dump([ts, oc, train_ids, valid_ids, test_ids], 
-            open('../data/processed/physionet_2012.pkl','wb'))
+            open('../data/processed/aumc.pkl','wb'))

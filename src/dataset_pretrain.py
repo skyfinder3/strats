@@ -18,6 +18,9 @@ class PretrainDataset(Dataset):
             self.max_minute = 24*60
         elif args.dataset=='physionet_2012':
             self.max_minute = 48*60
+        elif args.dataset=='aumc':
+            # TODO set this to comparable setting e.g. 48 h after admission
+            self.max_minute = 48*60
             
         # remove test data, update train_ids for pretraining
         data = data.loc[~data.ts_id.isin(test_ids)]

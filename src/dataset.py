@@ -24,6 +24,10 @@ class Dataset:
             # Filter labeled data in first 24h and fill missing age for old patients.
             data = data.loc[(data.minute>=0)&(data.minute<=24*60)]
             data.loc[(data.variable=='Age')&(data.value>200), 'value'] = 91.4
+        if args.dataset=='aumc':
+            # TODO potentially add labelled data here if we can find some e.g. time till sepsis
+            pass
+
             
         # keep variables seen in training set only
         train_variables = data.loc[data.ts_id.isin(train_ids)].variable.unique()
@@ -45,7 +49,7 @@ class Dataset:
         oc = oc.loc[oc.ts_id.isin(sup_ts_ids)]
         oc['ts_ind'] = oc['ts_id'].map(ts_id_to_ind)
         oc = oc.sort_values(by='ts_ind')
-        y = np.array(oc['in_hospital_mortality'])
+        y = np.array(oc['sepsis_3'])
         N = len(sup_ts_ids)
 
         # To save
@@ -195,6 +199,9 @@ class Dataset:
         elif dataset=='physionet_2012':
             static_varis = ['Age', 'Gender', 'Height', 'ICUType_1',
                             'ICUType_2', 'ICUType_3', 'ICUType_4']
+        elif dataset=='aumc':
+            static_varis = ['Age', 'Gender', 'Height', 'ICUType_1',
+                            'ICUType_2', 'ICUType_3', 'ICUType_4'] # TODO maybe Remove ICUType
         return static_varis
 
     def get_static_data(self, data):
@@ -207,6 +214,9 @@ class Dataset:
         if self.args.dataset=='physionet_2012':
             D+=2
             self.static_varis += ['Gender_missing', 'Height_missing']
+        elif self.args.dataset=='aumc':
+            D+=2
+            self.static_varis += ['Gender_missing', 'Height_missing']
         demo = np.zeros((self.N, D))
         for row in tqdm(static_data.itertuples()):
             var_ind = static_var_to_ind[row.variable]
@@ -216,8 +226,22 @@ class Dataset:
                     demo[row.ts_ind, D-2] = 1
                 elif row.variable=='Height':
                     demo[row.ts_ind, D-1] = 1
+            elif self.args.dataset=='aumc':
+                if row.variable=='Gender':
+                    demo[row.ts_ind, D-2] = 1
+                elif row.variable=='Height':
+                    demo[row.ts_ind, D-1] = 1
         # mean fill missing static values
         if self.args.dataset=='physionet_2012':
+            static_data_train = static_data.loc[static_data.ts_ind.isin(self.splits['train'])]
+            gender_mean = static_data_train.loc[static_data_train.variable=='Gender']['value'].mean()
+            height_mean = static_data_train.loc[static_data_train.variable=='Height']['value'].mean()
+            del static_data_train
+            gender_mask = (1-demo[:,D-2]).astype(bool)
+            demo[gender_mask, static_var_to_ind['Gender']] = gender_mean
+            height_mask = (1-demo[:,D-1]).astype(bool)
+            demo[height_mask, static_var_to_ind['Height']] = height_mean
+        elif self.args.dataset=='aumc':
             static_data_train = static_data.loc[static_data.ts_ind.isin(self.splits['train'])]
             gender_mean = static_data_train.loc[static_data_train.variable=='Gender']['value'].mean()
             height_mean = static_data_train.loc[static_data_train.variable=='Height']['value'].mean()
