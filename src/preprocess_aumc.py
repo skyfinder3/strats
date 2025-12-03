@@ -34,7 +34,7 @@ def read_outcomes(raw_data_path, set_name):
     oc['subset'] = set_name
     oc.AdmissionID = oc.AdmissionID.astype(str)
     oc.rename(columns={'AdmissionID':'ts_id',
-                       'Sepsis3':'sepsis_3'}, inplace=True)
+                       'Sepsis3':'Sepsis3'}, inplace=True)
     return oc
 
 

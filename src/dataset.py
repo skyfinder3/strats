@@ -49,7 +49,7 @@ class Dataset:
         oc = oc.loc[oc.ts_id.isin(sup_ts_ids)]
         oc['ts_ind'] = oc['ts_id'].map(ts_id_to_ind)
         oc = oc.sort_values(by='ts_ind')
-        y = np.array(oc['sepsis_3'])
+        y = np.array(oc['Sepsis3'])
         N = len(sup_ts_ids)
 
         # To save
@@ -200,8 +200,8 @@ class Dataset:
             static_varis = ['Age', 'Gender', 'Height', 'ICUType_1',
                             'ICUType_2', 'ICUType_3', 'ICUType_4']
         elif dataset=='aumc':
-            static_varis = ['Age', 'Gender', 'Height', 'ICUType_1',
-                            'ICUType_2', 'ICUType_3', 'ICUType_4'] # TODO maybe Remove ICUType
+            static_varis = ['Age', 'Gender', 'Height']#  'ICUType_1',
+                            #'ICUType_2', 'ICUType_3', 'ICUType_4'] # TODO maybe Remove ICUType
         return static_varis
 
     def get_static_data(self, data):
@@ -215,8 +215,8 @@ class Dataset:
             D+=2
             self.static_varis += ['Gender_missing', 'Height_missing']
         elif self.args.dataset=='aumc':
-            D+=2
-            self.static_varis += ['Gender_missing', 'Height_missing']
+            D+=3
+            self.static_varis += ['Gender_missing', 'Height_missing', 'Age']
         demo = np.zeros((self.N, D))
         for row in tqdm(static_data.itertuples()):
             var_ind = static_var_to_ind[row.variable]
@@ -227,7 +227,9 @@ class Dataset:
                 elif row.variable=='Height':
                     demo[row.ts_ind, D-1] = 1
             elif self.args.dataset=='aumc':
-                if row.variable=='Gender':
+                if row.variabel=='Age':
+                    demo[row.ts_ind, D-3] = 1
+                elif row.variable=='Gender':
                     demo[row.ts_ind, D-2] = 1
                 elif row.variable=='Height':
                     demo[row.ts_ind, D-1] = 1
@@ -243,9 +245,12 @@ class Dataset:
             demo[height_mask, static_var_to_ind['Height']] = height_mean
         elif self.args.dataset=='aumc':
             static_data_train = static_data.loc[static_data.ts_ind.isin(self.splits['train'])]
+            age_mean = static_data_train.loc[static_data_train.variable=='Age']['value'].mean()
             gender_mean = static_data_train.loc[static_data_train.variable=='Gender']['value'].mean()
             height_mean = static_data_train.loc[static_data_train.variable=='Height']['value'].mean()
             del static_data_train
+            age_mask = (1-demo[:,D-3]).astype(bool)
+            demo[age_mask, static_var_to_ind['Age']] = age_mean
             gender_mask = (1-demo[:,D-2]).astype(bool)
             demo[gender_mask, static_var_to_ind['Gender']] = gender_mean
             height_mask = (1-demo[:,D-1]).astype(bool)
