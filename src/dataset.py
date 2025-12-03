@@ -216,7 +216,7 @@ class Dataset:
             self.static_varis += ['Gender_missing', 'Height_missing']
         elif self.args.dataset=='aumc':
             D+=3
-            self.static_varis += ['Gender_missing', 'Height_missing', 'Age']
+            self.static_varis += ['Gender_missing', 'Height_missing', 'Age_missing']
         demo = np.zeros((self.N, D))
         for row in tqdm(static_data.itertuples()):
             var_ind = static_var_to_ind[row.variable]
@@ -227,7 +227,7 @@ class Dataset:
                 elif row.variable=='Height':
                     demo[row.ts_ind, D-1] = 1
             elif self.args.dataset=='aumc':
-                if row.variabel=='Age':
+                if row.variable=='Age':
                     demo[row.ts_ind, D-3] = 1
                 elif row.variable=='Gender':
                     demo[row.ts_ind, D-2] = 1
