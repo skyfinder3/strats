@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import re
+import pickle
 
 # specify where the custom data is found
 data_path = r"..\data\custom\values"
@@ -16,18 +17,15 @@ df = pd.read_csv(filename)
 print(df.head())
 
 '''
+df_values = pd.read_csv(os.path.join(r"..\data\custom\Matias", "output.csv"))
 
-filename = os.path.join(r"..\data\custom\Matias", "Dataset.csv")
-df = pd.read_csv(filename)
+summary = pd.DataFrame({
+    "dtype": df_values.dtypes,
+    "nan_count": df_values.isna().sum(),
+    "nan_pct": df_values.isna().mean() * 100,
+    "non_null_count": df_values.notna().sum(),
+})
 
-# Extract column names
-cols = df.columns.tolist()
+print(summary)
 
-# Convert to dataframe with one column
-df_ids = pd.DataFrame({"admission_id": cols})
-print(df_ids.head())
-
-out_filename = os.path.join(r"..\data\custom\Matias", "Dataset_corrected.csv")
-df_ids.to_csv(out_filename, index=False)
-
-
+df_values[]
