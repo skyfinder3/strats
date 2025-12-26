@@ -18,10 +18,10 @@ python create_dataset_from_custom.py
 # preprocess dataset like physionet12
 python preprocess_aumc.py
 # Strats custom with pretrain for 100 epochs
-python main.py --pretrain 1 --dataset aumc --model_type strats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-4 --max_epochs 100
-template="python main.py --dataset aumc --model_type strats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-5 --load_ckpt_path ../outputs/aumc/pretrain/checkpoint_best.bin"
+python main.py --pretrain 1 --dataset aumc --model_type strats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-4 --max_epochs 100 --train_batch_size 8
+template="python main.py --dataset aumc --model_type strats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-5 --train_batch_size 8 --load_ckpt_path ../outputs/aumc/pretrain/checkpoint_best.bin"
 run_commands "\${template}"
 
-python main.py --pretrain 1 --dataset aumc --model_type istrats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-4 --max_epochs 100
-template="python main.py --dataset aumc --model_type istrats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-5 --load_ckpt_path ../outputs/aumc/pretrain/checkpoint_best.bin"
+python main.py --pretrain 1 --dataset aumc --model_type istrats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-4 --max_epochs 100 --train_batch_size 8
+template="python main.py --dataset aumc --model_type istrats --hid_dim 64 --num_layers 2 --num_heads 16 --dropout 0.2 --attention_dropout 0.2 --lr 5e-5 --train_batch_size 8 --load_ckpt_path ../outputs/aumc/pretrain/checkpoint_best.bin"
 run_commands "\${template}"

@@ -9,23 +9,54 @@ RAW_DATA_PATH = r'C:\Users\Skyfinder\Projects\STraTS\data\unprocessed\ml_health'
 
 
 def read_ts(raw_data_path, set_name):
-    ts = []
-    pbar = tqdm(os.listdir(raw_data_path+'/set-'+set_name), 
-                desc='Reading time series set '+set_name)
-    for f in pbar:
-        data = pd.read_csv(raw_data_path+'/set-'+set_name+'/'+f).iloc[1:]
-        data = data.loc[data.Parameter.notna()]
-        if len(data)<=5:
+    import os
+    import pandas as pd
+    from tqdm import tqdm
+
+    ts_list = []
+    base_path = os.path.join(raw_data_path, f"set-{set_name}")
+
+    for fname in tqdm(os.listdir(base_path), desc=f"Reading time series set {set_name}"):
+        fpath = os.path.join(base_path, fname)
+
+        df = pd.read_csv(fpath)
+
+        # drop header row duplication + invalid params
+        df = df.iloc[1:]
+        df = df[df["Parameter"].notna()]
+
+        # skip tiny admissions
+        if len(df) <= 5:
             continue
-        data = data.loc[data.Value>=0] # neg Value indicates missingness.
-        data['AdmissionID'] = f[:-4]
-        ts.append(data)
-    ts = pd.concat(ts)
-    ts.Time = ts.Time.apply(lambda x:int(x[:2])*60
-                            +int(x[3:])) # No. of minutes since admission.
-    ts.rename(columns={'Time':'minute', 'Parameter':'variable', 
-                       'Value':'value', 'AdmissionID':'ts_id'}, inplace=True)
-    return ts
+
+        # missingness encoded as negative values
+        df = df[df["Value"] >= 0]
+
+        # extract admission id
+        df["ts_id"] = fname.replace(".txt", "")
+
+        ts_list.append(df)
+
+    if not ts_list:
+        return pd.DataFrame()
+
+    ts = pd.concat(ts_list, ignore_index=True)
+
+    # --- Robust time parsing ---
+    time_split = ts["Time"].str.split(":", expand=True).astype(int)
+    ts["minute"] = time_split[0] * 60 + time_split[1]
+
+    # rename columns
+    ts.rename(
+        columns={
+            "Parameter": "variable",
+            "Value": "value"
+        },
+        inplace=True
+    )
+
+    return ts[["ts_id", "minute", "variable", "value"]]
+
 
 
 def read_outcomes(raw_data_path, set_name):
@@ -37,13 +68,14 @@ def read_outcomes(raw_data_path, set_name):
                        'Sepsis3':'Sepsis3'}, inplace=True)
     return oc
 
-
+# get time series
 ts = pd.concat([read_ts(RAW_DATA_PATH, set_name) 
                 for set_name in ['a']])
+# get outcomes
 oc = pd.concat([read_outcomes(RAW_DATA_PATH, set_name) 
                 for set_name in ['a']])
-# TODO If we want other sets, do that here, dont think we need to though
 
+# Keep only ts_ids present in outcomes.
 ts_ids = sorted(list(ts.ts_id.unique()))
 oc = oc.loc[oc.ts_id.isin(ts_ids)]
 
@@ -65,8 +97,11 @@ np.random.shuffle(all_ids)
 bp1 = int(0.7 * len(all_ids))   # 70% train
 bp2 = int(0.85 * len(all_ids))  # next 15% val
 train_ids = all_ids[:bp1]
+print(f"Number of training samples: {len(train_ids)}")
 valid_ids = all_ids[bp1:bp2]
+print(f"Number of validation samples: {len(valid_ids)}")
 test_ids = all_ids[bp2:]
+print(f"Number of test samples: {len(test_ids)}")
 
 # Store data.
 os.makedirs('../data/processed', exist_ok=True)

@@ -10,13 +10,6 @@ data_path = r"..\data\custom\values"
 out_path = r"..\data\unprocessed\ml_health\set-a"
 cohort_path = r"..\data\custom\cohort"
 
-'''
-filename = os.path.join(r"..\data\custom\Matias", "output.csv")
-df = pd.read_csv(filename)
-
-print(df.head())
-
-'''
 df_values = pd.read_csv(os.path.join(r"..\data\custom\Matias", "output.csv"))
 
 summary = pd.DataFrame({
@@ -28,4 +21,4 @@ summary = pd.DataFrame({
 
 print(summary)
 
-df_values[]
+print
