@@ -10,7 +10,7 @@ class Dataset:
     def __init__(self, args) -> None:
         # read data
         filepath = '../data/processed/'+args.dataset+'.pkl'
-        data, oc, train_ids, val_ids, test_ids = pickle.load(open(filepath,'rb'))
+        data, oc, train_ids, val_ids, test_ids, infer_ids = pickle.load(open(filepath,'rb'))
         run, totalruns = list(map(int, args.run.split('o')))
         num_train = int(np.ceil(args.train_frac*len(train_ids)))
         start = int(np.linspace(0,len(train_ids)-num_train,totalruns)[run-1])
@@ -39,7 +39,10 @@ class Dataset:
         train_ids = np.intersect1d(train_ids, curr_ids)
         val_ids = np.intersect1d(val_ids, curr_ids)
         test_ids = np.intersect1d(test_ids, curr_ids)
-        args.logger.write('# train, val, test TS: '+str([len(train_ids), len(val_ids), len(test_ids)]))
+        # add inference ids
+        infer_ids = np.intersect1d(infer_ids, curr_ids)
+
+        args.logger.write('# train, val, test TS: '+str([len(train_ids), len(val_ids), len(test_ids), len(infer_ids)]))
         sup_ts_ids = np.concatenate((train_ids, val_ids, test_ids))
         ts_id_to_ind = {ts_id:i for i,ts_id in enumerate(sup_ts_ids)}
         data = data.loc[data.ts_id.isin(sup_ts_ids)]
@@ -59,7 +62,8 @@ class Dataset:
         self.static_varis = static_varis
         self.splits = {'train':[ts_id_to_ind[i] for i in train_ids],
                        'val':[ts_id_to_ind[i] for i in val_ids],
-                       'test':[ts_id_to_ind[i] for i in test_ids]}
+                       'test':[ts_id_to_ind[i] for i in test_ids],
+                       'infer':[ts_id_to_ind[i] for i in infer_ids]}
         self.splits['eval_train'] = self.splits['train'][:2000]
         self.train_cycler = CycleIndex(self.splits['train'], args.train_batch_size)
         num_train, num_train_pos = len(train_ids), y[self.splits['train']].sum()
@@ -68,7 +72,8 @@ class Dataset:
         args.logger.write('% pos class in train, val, test splits: '
                           +str([num_train_pos/num_train, 
                                 y[self.splits['val']].sum()/len(val_ids),
-                                y[self.splits['test']].sum()/len(test_ids)]))
+                                y[self.splits['test']].sum()/len(test_ids),
+                                y[self.splits['infer']].sum()/len(infer_ids)]))
         
         if 'llm' in args.model_type:
             self.data = data

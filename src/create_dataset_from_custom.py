@@ -9,7 +9,6 @@ from datetime import datetime
 # specify where the custom data is found
 data_path = r"..\data\custom\values"
 out_path = r"..\data\unprocessed\ml_health\set-a"
-cohort_path = r"..\data\custom\cohort"
 matias_path = r"..\data\custom\Matias"
 
 def format_time(minutes):
@@ -164,78 +163,77 @@ def write_static_measurements(df, out_path):
 
 
 def process_values(
-    cohort_path,
-    labels_path,
     input_path,
     out_path, 
     debug=False,
 ):
     os.makedirs(out_path, exist_ok=True)
 
-    # Load cohort
-    df_cohort = pd.read_csv(cohort_path)
-
     # --- Load values ---
     df_values = pd.read_csv(input_path)
 
-    # only keep values in cohort
-    df_values = df_values[df_values["visit_occurrence_id"].isin(df_cohort["admission_id"].values)]
+    # load cohort
+    df_cohort = pd.DataFrame({
+        "visit_occurrence_id": df_values["visit_occurrence_id"].unique()
+    })
 
-    # --- Clean datetime ---
+    # only keep values in cohort
+    df_values = df_values[df_values["visit_occurrence_id"].isin(df_cohort["visit_occurrence_id"].values)]
+
+    # --- Clean datetimes ---
     df_values["event_datetime"] = pd.to_datetime(
         df_values["event_datetime"],
         errors="coerce",
         utc=True
     )
 
-    # --- Load sepsis labels ---
-    df_sepsis = pd.read_csv(labels_path)
-    df_sepsis = df_sepsis.dropna(subset=["time"]).copy()
+    df_values["visit_start_datetime"] = pd.to_datetime(
+        df_values["visit_start_datetime"],
+        errors="coerce",
+        utc=True
+    )
 
-    # filter only positive time values
-    df_sepsis = df_sepsis[df_sepsis["time"] >= 0]
+    # --- Get sepsis labels ---
+    df_sepsis = df_values[df_values['variable_name'] == 'sepsis']
+
+
+    # remove harmful variables death and death in visit
+    df_values = df_values[~df_values['variable_name'].isin(['death', 'death_in_visit', 'sepsis'])]
 
     if debug: print(f"Total sepsis episodes after time filter: {len(df_sepsis)}")
 
-    # keep only earliest valid episode per admission
-    df_sepsis = (
-        df_sepsis
-        .sort_values("time")
-        .groupby("admission_id", as_index=False)
-        .first()
+    # get a time map for sepsis onset times
+    sepsis_time_map = dict(
+        zip(
+            df_sepsis["visit_occurrence_id"],
+            df_sepsis["time_since_admission_hours"]
+        )
     )
     
-    # update sepsis time to 1 if time == 0
-    df_sepsis.loc[df_sepsis["time"] == 0, "time"] = 1
-    df_sepsis["sepsis_time_hours"] = df_sepsis["time"] * 24
-
     visits = list(df_values.groupby("visit_occurrence_id"))
 
     # process one patient as a time
     for visit_id, g in tqdm(visits, desc="Processing admissions"):
 
-        # sort events
-        g = g.sort_values("event_datetime", na_position="last")
+        g = g.sort_values(by='event_datetime', ascending=True)
+        
+        t0 = g["visit_start_datetime"].iloc[0]
 
-        # get earliest datetime as admission time
-        t0 = g["event_datetime"].min()
-
-        # get last possible datetime depending on sepsis time
-        if visit_id in df_sepsis["admission_id"].values:
-            sepsis_time = df_sepsis.loc[df_sepsis["admission_id"] == visit_id, "sepsis_time_hours"].values[0]
-            t_end = t0 + timedelta(hours=sepsis_time)
+        if visit_id in sepsis_time_map:
+            t_end = t0 + timedelta(hours=sepsis_time_map[visit_id])
         else:
-            t_end = t0 + timedelta(hours=14*48)  # set observation
+            t_end = t0 + timedelta(hours=14 * 24) # 14 day max
         
         rows = []
 
-        # --- Static variables ---
-        required_vars = ["AdmissionID", "Age", "Gender", "Height"]
+        # --- Static variables --- first
+        required_vars = ["AdmissionID", "Age", "Gender", "Height", "Weight"]
         required_values = {
             "AdmissionID": visit_id,
-            "Age": 18,     # TODO
+            "Age": 18,     # TODO update once in the data
             "Gender": -1,
-            "Height": 165  # TODO
+            "Height": 165,  # TODO update once in the data
+            "Weight": 1    # TODO update once in the data 
         }
 
         for _, row in g.iterrows():
@@ -251,6 +249,11 @@ def process_values(
                 required_values["Gender"] = 1 if val == 1.0 else 0
             elif var in required_vars and var != "AdmissionID":
                 required_values[var] = val
+            
+            if var == "weight_static":
+                required_values["Weight"] = val
+            elif var in required_vars and var != "AdmissionID":
+                required_values[var] = val
 
         # append static values first with 00:00 time
         for var in required_vars:
@@ -258,8 +261,9 @@ def process_values(
 
         # --- Time-dependent variables ---
         for _, row in g.iterrows():
+            # skip static variables
             var = row["variable_name"]
-            if var in required_vars or var == "female_static":
+            if var in required_vars or var == "female_static" or var == "weight_static":
                 continue
             
             # get date time of event
@@ -299,49 +303,37 @@ def process_values(
 
 
 def create_outcomes(
-    cohort_path,
-    labels_path,
+    input_path,
     output_path,
     debug = False
 ):
     import os
     import pandas as pd
     import matplotlib.pyplot as plt
-    df_cohort = pd.read_csv(cohort_path)
-    df_sepsis = pd.read_csv(labels_path)
 
-    if debug: print(f"Total sepsis episodes before restriction: {len(df_sepsis)}")
+    df_values = pd.read_csv(input_path)
 
-    # keep earliest sepsis episode
-    df_sepsis = (
-        df_sepsis
-        .dropna(subset=["time"])
-        .sort_values("time")
-        .groupby("admission_id", as_index=False)
-        .first()
-    )
+    # read cohort
+    df_cohort =pd.DataFrame({
+        "visit_occurrence_id": df_values["visit_occurrence_id"].unique()
+    })
 
-    # get only episodes vith times after admission
-    valid = df_sepsis["time"] >= 0
-    df_sepsis = df_sepsis.loc[valid]
+    # read lables
+    df_sepsis = df_values[df_values['variable_name'] == 'sepsis']
 
-    plt.hist(df_sepsis["time"])
-    plt.show()
-
-
-    if debug: print(f"Total unique sepsis episodes with valid times: {len(df_sepsis)}")
+    if debug: print("Total sepsis episodes: "+str(len(df_sepsis)))
 
     if debug: print(f"Total cohort size: {len(df_cohort)}")
-    if debug: print(f"Total sepsis episodes in cohort: {len(df_sepsis)}")
 
     # create outcome file. all cohort admissions, mark sepsis=1 if in sepsis list
     outcome_df = pd.DataFrame({
-        "AdmissionID": df_cohort["admission_id"],
-        "Sepsis3": df_cohort["admission_id"].isin(
-            df_sepsis["admission_id"]
+        "AdmissionID": df_cohort["visit_occurrence_id"],
+        "Sepsis3": df_cohort["visit_occurrence_id"].isin(
+            df_sepsis["visit_occurrence_id"]
         ).astype(int)
     })
 
+    if debug: print(f"Total sepsis episodes in cohort: {len(outcome_df[outcome_df['Sepsis3']==1])}") 
     if debug: print(f"Total admissions in outcome file: {len(outcome_df)}")
 
     out = os.path.join(output_path, "Outcomes-a.txt")
@@ -366,20 +358,15 @@ def write_cohort_log(
     log_path = os.path.join(paths["output_dir"], "log.txt")
 
     # --- Load data ---
-    df_cohort = pd.read_csv(paths["cohort_file"])
-    df_outcomes = pd.read_csv(paths["outcomes_file"])
-    df_variables = pd.read_csv(paths["features_file"])
+    df_values = pd.read_csv(paths["features_file"])
+
+    df_values = df_values[~df_values['variable_name'].isin(['death', 'death_in_visit', 'sepsis'])]
 
     # --- Restrict outcomes to cohort admissions only ---
-    cohort_ids = df_cohort[admission_id_col].unique()
+    df_cohort = pd.DataFrame({'visit_occurrence_id': df_values['visit_occurrence_id'].unique()})
 
-    df_outcomes = df_outcomes[
-        df_outcomes[admission_id_col].isin(cohort_ids)
-    ]
-
-    n_total = len(df_outcomes)
-    # --- Keep earliest sepsis onset per admission ---
-    df_outcomes = df_outcomes.dropna(subset=["time"]).copy()
+    n_total_values = len(df_values)
+   
 
     df_outcomes["sepsis_time_hours"] = df_outcomes["time"] * 24
 
@@ -397,7 +384,7 @@ def write_cohort_log(
     # --- Counts ---
     total_admissions = df_cohort[admission_id_col].nunique()
     septic_admissions = df_outcomes[admission_id_col].nunique()
-    n_variables = df_variables["variable_name"].nunique()
+    n_variables = df_values["variable_name"].nunique()
 
     # --- Histogram ---
     sepsis_times = df_outcomes[sepsis_time_col]
@@ -428,7 +415,7 @@ def write_cohort_log(
         f.write("-" * 60 + "\n")
         f.write(f"Total number of admissions: {total_admissions}\n")
         f.write(f"Total number of septic admissions: {septic_admissions}\n")
-        f.write(f"Number of sepsis episodes (total): {n_total}\n")
+        f.write(f"Number of sepsis episodes (total): {n_total_values}\n")
         f.write(f"Number of predictable sepsis episodes: {n_predictable}\n")
         f.write(
             f"Sepsis prevalence: "
@@ -469,18 +456,17 @@ os.chdir(r"C:\Users\Skyfinder\Projects\STraTS\src")
 
 ## run
 paths = {
-    "cohort_file": os.path.join(r"..\data\custom\Matias", "Dataset_corrected.csv"),
-    "outcomes_file": os.path.join(r"..\data\custom\labels", "sepsis3_septic_episodes.csv"),
-    "features_file": os.path.join(r"..\data\custom\Matias", "output.csv"),
+    "features_file": os.path.join(r"..\data\custom\Matias", "output_1.1.csv"),
     "output_dir": r"..\data\unprocessed\ml_health"
 }
 
-create_outcomes(cohort_path = paths["cohort_file"], labels_path = paths["outcomes_file"], output_path = paths["output_dir"], debug = True)
+create_outcomes(input_path = paths["features_file"], output_path = paths["output_dir"], debug = True)
 
-process_values(cohort_path=paths["cohort_file"], labels_path = paths["outcomes_file"], input_path = paths["features_file"], out_path = r"..\data\unprocessed\ml_health\set-a", debug = True)
+process_values(input_path = paths["features_file"], out_path = r"..\data\unprocessed\ml_health\set-a", debug = True)
 
-
+'''
 log_file = write_cohort_log(
-    experiment_name=f"Sepsis-3 Prediction run 1 only positive times, episode within first day is processed as within the 2 day of admission",
+    experiment_name=f"Sepsis-3 Prediction matias_data output_1.1.csv",
     paths=paths,
 )
+'''

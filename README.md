@@ -17,6 +17,8 @@ pip install pytz pandas tqdm matplotlib
 pip install torch==2.0.0+cu117 torchvision==0.15.1+cu117 torchaudio==2.0.1 --index-url https://download.pytorch.org/whl/cu117
 pip install transformers==4.35.2
 pip install scikit-learn==1.2.2
+
+numpy >= 1.26.2
 ```
 
 ## Dataset preprocessing

@@ -9,7 +9,7 @@ class PretrainDataset(Dataset):
     def __init__(self, args):
         # read data
         filepath = '../data/processed/'+args.dataset+'.pkl'
-        data, _, train_ids, val_ids, test_ids = pickle.load(open(filepath,'rb'))
+        data, _, train_ids, val_ids, test_ids, infer_ids = pickle.load(open(filepath,'rb'))
         args.logger.write('\nPreparing dataset '+args.dataset)
         static_varis = self.get_static_varis(args.dataset)
         if args.dataset=='mimic_iii':
