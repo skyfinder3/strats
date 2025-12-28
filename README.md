@@ -23,6 +23,11 @@ pip install scikit-learn==1.2.2
 Download PhysioNet2012 dataset from https://physionet.org/content/challenge-2012/1.0.0/. <br>
 Download MIMIC-III from https://physionet.org/content/mimiciii/1.4/, <br>
 Update "RAW_DATA_PATH" variable in the preprocessing scripts and run them.
+
+Extract set c / validation (no -labels)
+```
+tar -xvzf set-c.tar.gz
+```
 ```
 python preprocess_physionet_2012.py
 python preprocess_mimic_iii_large.py

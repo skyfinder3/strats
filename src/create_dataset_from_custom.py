@@ -193,9 +193,9 @@ def process_values(in_path, out_path):
         required_vars = ["AdmissionID", "Age", "Gender", "Height"]
         required_values = {
             "AdmissionID": visit_id,
-            "Age": -1,
+            "Age": 18, # TODO hardcoded 
             "Gender": -1,
-            "Height": -1
+            "Height": 165 # TODO hardcoded
         }
 
         # fill static values from dataframe
@@ -282,7 +282,7 @@ def prep_dirs():
 
 os.chdir(r"C:\Users\Skyfinder\Projects\STraTS\src")
 # clear old output and make sure the directories are set up
-# prep_dirs()
+prep_dirs()
 
 ## run
 
