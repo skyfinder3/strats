@@ -52,7 +52,7 @@ def process_values(
 
 
     # remove harmful variables death and death in visit
-    df_values = df_values[~df_values['variable_name'].isin(['death', 'death_in_visit', 'sepsis'])]
+    df_values = df_values[~df_values['variable_name'].isin(['death', 'death_in_visit', 'sepsis', 'admission_start'])]
 
     if debug: print(f"Total sepsis episodes after time filter: {len(df_sepsis)}")
 
@@ -218,7 +218,7 @@ def write_cohort_log(
 
     df_outcomes = df_values[df_values['variable_name'] == 'sepsis']
 
-    df_values = df_values[~df_values['variable_name'].isin(['death', 'death_in_visit', 'sepsis'])]
+    df_values = df_values[~df_values['variable_name'].isin(['death', 'death_in_visit', 'sepsis', 'admission_start'])]
 
     # --- Restrict outcomes to cohort admissions only ---
     df_cohort = pd.DataFrame({'visit_occurrence_id': df_values['visit_occurrence_id'].unique()})
