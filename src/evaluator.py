@@ -61,6 +61,27 @@ class Evaluator:
             plt.legend()
             plt.savefig(self.args.output_dir + f"/{self.args.dataset}_pr.png")
             plt.close()
+
+            # Suppose `true` and `pred` are your evaluation tensors
+            # Convert to numpy if needed
+            true = true.cpu().numpy() if isinstance(true, torch.Tensor) else true
+            pred = pred.cpu().numpy() if isinstance(pred, torch.Tensor) else pred
+
+            # Separate predictions by class
+            pred_pos = pred[true == 1]
+            pred_neg = pred[true == 0]
+
+            # Plot histograms
+            plt.figure(figsize=(8,5))
+            plt.hist(pred_neg, bins=50, color='blue', alpha=0.6, label='Negative', density=True)
+            plt.hist(pred_pos, bins=50, color='red', alpha=0.6, label='Positive', density=True)
+
+            plt.xlabel("Predicted Probability")
+            plt.ylabel("Density")
+            plt.title("Distribution of Predicted Probabilities by Class")
+            plt.legend()
+            plt.savefig(self.args.output_dir + f"/{self.args.dataset}_hist.png")
+            plt.close()
         
         return result
 
