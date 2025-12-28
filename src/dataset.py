@@ -24,7 +24,7 @@ class Dataset:
             # Filter labeled data in first 24h and fill missing age for old patients.
             data = data.loc[(data.minute>=0)&(data.minute<=24*60)]
             data.loc[(data.variable=='Age')&(data.value>200), 'value'] = 91.4
-        if args.dataset=='aumc':
+        if 'aumc' in args.dataset.lower():
             # TODO potentially add labelled data here if we can find some e.g. time till sepsis
             pass
 
@@ -204,9 +204,8 @@ class Dataset:
         elif dataset=='physionet_2012':
             static_varis = ['Age', 'Gender', 'Height', 'ICUType_1',
                             'ICUType_2', 'ICUType_3', 'ICUType_4']
-        elif dataset=='aumc':
-            static_varis = ['Age', 'Gender', 'Height']#  'ICUType_1',
-                            #'ICUType_2', 'ICUType_3', 'ICUType_4'] # TODO maybe Remove ICUType
+        elif 'aumc' in dataset.lower():
+            static_varis = ['Age', 'Gender', 'Height']
         return static_varis
 
     def get_static_data(self, data):
@@ -219,7 +218,7 @@ class Dataset:
         if self.args.dataset=='physionet_2012':
             D+=2
             self.static_varis += ['Gender_missing', 'Height_missing']
-        elif self.args.dataset=='aumc':
+        elif 'aumc' in self.args.dataset.lower():
             D+=3
             self.static_varis += ['Gender_missing', 'Height_missing', 'Age_missing']
         demo = np.zeros((self.N, D))
@@ -231,7 +230,7 @@ class Dataset:
                     demo[row.ts_ind, D-2] = 1
                 elif row.variable=='Height':
                     demo[row.ts_ind, D-1] = 1
-            elif self.args.dataset=='aumc':
+            elif 'aumc' in self.args.dataset.lower():
                 if row.variable=='Age':
                     demo[row.ts_ind, D-3] = 1
                 elif row.variable=='Gender':
@@ -248,7 +247,7 @@ class Dataset:
             demo[gender_mask, static_var_to_ind['Gender']] = gender_mean
             height_mask = (1-demo[:,D-1]).astype(bool)
             demo[height_mask, static_var_to_ind['Height']] = height_mean
-        elif self.args.dataset=='aumc':
+        elif 'aumc' in self.args.dataset.lower():
             static_data_train = static_data.loc[static_data.ts_ind.isin(self.splits['train'])]
             age_mean = static_data_train.loc[static_data_train.variable=='Age']['value'].mean()
             gender_mean = static_data_train.loc[static_data_train.variable=='Gender']['value'].mean()

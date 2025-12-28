@@ -3,9 +3,7 @@ import os
 import pandas as pd
 import pickle
 import numpy as np
-
-
-RAW_DATA_PATH = r'C:\Users\Skyfinder\Projects\STraTS\data\unprocessed\ml_health'
+import argparse
 
 
 def read_ts(raw_data_path, set_name):
@@ -68,42 +66,56 @@ def read_outcomes(raw_data_path, set_name):
                        'Sepsis3':'Sepsis3'}, inplace=True)
     return oc
 
-# get time series
-ts = pd.concat([read_ts(RAW_DATA_PATH, set_name) 
-                for set_name in ['a']])
-# get outcomes
-oc = pd.concat([read_outcomes(RAW_DATA_PATH, set_name) 
-                for set_name in ['a']])
 
-# Keep only ts_ids present in outcomes.
-ts_ids = sorted(list(ts.ts_id.unique()))
-oc = oc.loc[oc.ts_id.isin(ts_ids)]
+def run_all(args):
 
-# Drop duplicates.
-ts = ts.drop_duplicates()
+    # get time series
+    ts = pd.concat([read_ts(args.raw_data_path, set_name) 
+                    for set_name in ['a']])
+    # get outcomes
+    oc = pd.concat([read_outcomes(args.raw_data_path, set_name) 
+                    for set_name in ['a']])
 
-# Convert categorical to numeric.
-ii = (ts.variable=='ICUType')
-for val in [4,3,2,1]:
-    kk = ii&(ts.value==val)
-    ts.loc[kk, 'variable'] = 'ICUType_'+str(val)
-ts.loc[ii, 'value'] = 1
-    
+    # Keep only ts_ids present in outcomes.
+    ts_ids = sorted(list(ts.ts_id.unique()))
+    oc = oc.loc[oc.ts_id.isin(ts_ids)]
 
-# make test train val split
-all_ids = list(oc.ts_id)
-np.random.seed(123)
-np.random.shuffle(all_ids)
-bp1 = int(0.7 * len(all_ids))   # 70% train
-bp2 = int(0.85 * len(all_ids))  # next 15% val
-train_ids = all_ids[:bp1]
-print(f"Number of training samples: {len(train_ids)}")
-valid_ids = all_ids[bp1:bp2]
-print(f"Number of validation samples: {len(valid_ids)}")
-test_ids = all_ids[bp2:]
-print(f"Number of test samples: {len(test_ids)}")
+    # Drop duplicates.
+    ts = ts.drop_duplicates()
+        
 
-# Store data.
-os.makedirs('../data/processed', exist_ok=True)
-pickle.dump([ts, oc, train_ids, valid_ids, test_ids], 
-            open('../data/processed/aumc.pkl','wb'))
+    # make test train val split
+    all_ids = list(oc.ts_id)
+    np.random.seed(123)
+    np.random.shuffle(all_ids)
+    bp1 = int(0.7 * len(all_ids))   # 70% train
+    bp2 = int(0.85 * len(all_ids))  # next 15% val
+    train_ids = all_ids[:bp1]
+    print(f"Number of training samples: {len(train_ids)}")
+    valid_ids = all_ids[bp1:bp2]
+    print(f"Number of validation samples: {len(valid_ids)}")
+    test_ids = all_ids[bp2:]
+    print(f"Number of test samples: {len(test_ids)}")
+    infer_ids = all_ids[bp2:]  # using test as infer for now
+
+    # Store data.
+    os.makedirs(args.output_dir, exist_ok=True)
+    pickle.dump([ts, oc, train_ids, valid_ids, test_ids, infer_ids], 
+                open(os.path.join(args.output_dir, args.dataset_name, '.pkl'),'wb'))
+
+
+def parse_args() -> argparse.Namespace:
+    """Function to parse arguments."""
+    parser = argparse.ArgumentParser()
+
+    # dataset related arguments
+    parser.add_argument('--raw_data_path', type=str, default=r'..\data\unprocessed\ml_health')
+    parser.add_argument('--output_dir', type=str, default=r"..\data\processed")
+    parser.add_argument('--dataset_name', type=str, default=r"aumc")
+    args = parser.parse_args()
+    return args
+
+if __name__ == "__main__":
+    # Preliminary setup.
+    args = parse_args()
+    run_all(args)

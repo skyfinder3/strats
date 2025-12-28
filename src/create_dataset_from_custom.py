@@ -1,172 +1,22 @@
 import os
+from pdb import run
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import re
 from datetime import timedelta
 from datetime import datetime
-
-# specify where the custom data is found
-data_path = r"..\data\custom\values"
-out_path = r"..\data\unprocessed\ml_health\set-a"
-matias_path = r"..\data\custom\Matias"
-
-def format_time(minutes):
-    """Convert minutes since admission to HH:MM string."""
-    hours = int(minutes // 60)
-    mins = int(minutes % 60)
-    return f"{hours:02d}:{mins:02d}"
-
-def clean_value(value):
-    """Round numeric values to 2 decimals, keep others as-is."""
-    if pd.isna(value):
-        return -1
-    try:
-        return round(float(value), 2)
-    except:
-        return value
-
-
-def clean_static_value(param, value):
-    """Clean static values to match reference format."""
-    
-    if pd.isna(value):
-        return -1
-    
-    # Gender
-    if param == "Gender":
-        if str(value).lower() in ["man", "male"]:
-            return 1
-        elif str(value).lower() in ["vrouw", "female"]:
-            return 0
-        else:
-            return -1
-
-    # RecordID & ICUType → int
-    if param in ["RecordID", "ICUType"]:
-        try:
-            return int(float(value))
-        except:
-            return -1
-
-    # Age, Height, Weight → float or int
-    if param in ["Age", "Height", "Weight"]:
-        value_str = str(value)
-        # Range: "60-69" → take midpoint
-        match = re.match(r"(\d+)-(\d+)", value_str)
-        if match:
-            low, high = map(float, match.groups())
-            val = (low + high) / 2
-            # Age as int, height/weight as float with 1 decimal
-            return int(round(val)) if param=="Age" else round(val, 1)
-        # Greater than: "190+" → add 0.5 as estimate
-        match = re.match(r"(\d+)\+", value_str)
-        if match:
-            val = float(match.group(1))
-            return int(val) if param=="Age" else round(val + 0.5, 1)
-        # Single numeric value
-        try:
-            val = float(value)
-            return int(val) if param=="Age" else round(val, 1)
-        except:
-            return -1
-
-    # Default: keep as is
-    return value
-
-    
-def write_measurements(admission_id, group_df):
-    """
-    admission_id : patient ID
-    group_df     : DataFrame with columns ["admissionid", "time", "item", "value"]
-    """
-
-    filename = os.path.join(out_path, f"{admission_id}.txt")
-
-    new_df = group_df[["time", "item", "value"]].copy()
-    # Convert time from minutes to HH:MM
-    new_df["time"] = new_df["time"].apply(format_time)
-    # Round numeric values
-    new_df["value"] = new_df["value"].apply(clean_value)
-
-    new_df.columns = ["Time", "Parameter", "Value"]
-    new_df = new_df.astype({"Time": "string", "Parameter": "string", "Value": "string"})
-
-    # If file exists, load it
-    if os.path.exists(filename):
-        existing = pd.read_csv(filename).astype({"Time": "string", "Parameter": "string", "Value": "string"})
-    else:
-        existing = pd.DataFrame(columns=["Time", "Parameter", "Value"]).astype({
-            "Time": "string",
-            "Parameter": "string",
-            "Value": "string"
-        })
-
-    ## Concatenate only non-empty frames to avoid FutureWarning
-    frames = [df for df in [existing, new_df] if not df.empty]
-    out_df = pd.concat(frames, ignore_index=True)
-
-    # Sort and save
-    out_df = out_df.sort_values(by=["Time", "Parameter"]).reset_index(drop=True)
-    out_df.to_csv(filename, index=False)
-
-
-def write_static_measurements(df, out_path):
-    """
-    df: DataFrame with patient/admission info
-    txt_folder: folder where <admissionid>.txt will be stored
-    """
-    # Columns to extract and map to triplets
-    mapping = {
-        "patientid": "RecordID",
-        "agegroup": "Age",
-        "gender": "Gender",
-        "heightgroup": "Height",
-        "ICUType": "ICUType",
-        "weightgroup": "Weight"
-    }
-    
-    # Loop over all admissions
-    for idx, row in tqdm(df.iterrows(), total=len(df), desc="Static values"):
-        admission_id = row["admissionid"]
-        triplets = []
-
-        for col, param in mapping.items():
-            value = row.get(col, -1)
-            value = clean_static_value(param, value)
-            triplets.append(("00:00", param, value))
-
-        # Write to file
-        filename = os.path.join(out_path, f"{admission_id}.txt")
-        
-        # New static DataFrame
-        new_df = pd.DataFrame(triplets, columns=["Time", "Parameter", "Value"])
-        new_df = new_df.astype({"Time": "string", "Parameter": "string", "Value": "string"})
-        
-        # Load existing file if present
-        if os.path.exists(filename):
-            existing = pd.read_csv(filename).astype({"Time": "string", "Parameter": "string", "Value": "string"})
-        else:
-            existing = pd.DataFrame(columns=["Time", "Parameter", "Value"]).astype({
-                "Time": "string",
-                "Parameter": "string",
-                "Value": "string"
-            })
-        
-        # Concatenate only non-empty frames
-        frames = [df for df in [existing, new_df] if not df.empty]
-        out_df = pd.concat(frames, ignore_index=True)
-
-        # Sort and save
-        out_df = out_df.sort_values(by=["Time", "Parameter"]).reset_index(drop=True)
-        out_df.to_csv(filename, index=False)
+import argparse
 
 
 def process_values(
     input_path,
     out_path, 
     debug=False,
+    pred_window_hours=0
 ):
+    # append set-a to out_path
+    out_path = os.path.join(out_path, "set-a")
     os.makedirs(out_path, exist_ok=True)
 
     # --- Load values ---
@@ -220,7 +70,7 @@ def process_values(
         t0 = g["visit_start_datetime"].iloc[0]
 
         if visit_id in sepsis_time_map:
-            t_end = t0 + timedelta(hours=sepsis_time_map[visit_id])
+            t_end = t0 + timedelta(hours=sepsis_time_map[visit_id] - pred_window_hours)
         else:
             t_end = t0 + timedelta(hours=14 * 24) # 14 day max
         
@@ -343,10 +193,7 @@ def create_outcomes(
 
 def write_cohort_log(
     experiment_name: str,
-    paths: dict,
-    admission_id_col: str = "admission_id",
-    sepsis_time_col: str = "time",
-    n_time_bins: int = 10,
+    args
 ):
     """
     Create a log.txt file summarizing a cohort-based sepsis prediction experiment.
@@ -354,11 +201,13 @@ def write_cohort_log(
     per admission (earliest onset only).
     """
 
-    os.makedirs(paths["output_dir"], exist_ok=True)
-    log_path = os.path.join(paths["output_dir"], "log.txt")
+    os.makedirs(args.output_dir, exist_ok=True)
+    log_path = os.path.join(args.output_dir, "log.txt")
 
     # --- Load data ---
-    df_values = pd.read_csv(paths["features_file"])
+    df_values = pd.read_csv(args.features_file)
+
+    df_outcomes = df_values[df_values['variable_name'] == 'sepsis']
 
     df_values = df_values[~df_values['variable_name'].isin(['death', 'death_in_visit', 'sepsis'])]
 
@@ -367,30 +216,16 @@ def write_cohort_log(
 
     n_total_values = len(df_values)
    
-
-    df_outcomes["sepsis_time_hours"] = df_outcomes["time"] * 24
-
-    # keep earliest valid episode per admission
-    df_outcomes = (
-        df_outcomes
-        .sort_values("sepsis_time_hours")
-        .groupby("admission_id", as_index=False)
-        .first()
-    )
-
-
-    n_predictable = len(df_outcomes)
-
     # --- Counts ---
-    total_admissions = df_cohort[admission_id_col].nunique()
-    septic_admissions = df_outcomes[admission_id_col].nunique()
+    total_admissions = df_cohort["visit_occurrence_id"].nunique()
+    septic_admissions = len(df_outcomes)
     n_variables = df_values["variable_name"].nunique()
 
     # --- Histogram ---
-    sepsis_times = df_outcomes[sepsis_time_col]
+    sepsis_times = df_outcomes["time_since_admission_hours"].tolist()
 
     if len(sepsis_times) > 0:
-        counts, bin_edges = np.histogram(sepsis_times, bins=n_time_bins)
+        counts, bin_edges = np.histogram(sepsis_times, bins=df_outcomes["time_since_admission_hours"].nunique())
     else:
         counts, bin_edges = [], []
 
@@ -402,11 +237,10 @@ def write_cohort_log(
         f.write("=" * 60 + "\n")
         f.write(f"Run timestamp: {datetime.now().isoformat()}\n\n")
 
-
         # Paths
         f.write("INPUT PATHS / FILES\n")
         f.write("-" * 60 + "\n")
-        for name, path in paths.items():
+        for name, path in args.items():
             f.write(f"{name}: {path}\n")
         f.write("\n")
 
@@ -416,7 +250,6 @@ def write_cohort_log(
         f.write(f"Total number of admissions: {total_admissions}\n")
         f.write(f"Total number of septic admissions: {septic_admissions}\n")
         f.write(f"Number of sepsis episodes (total): {n_total_values}\n")
-        f.write(f"Number of predictable sepsis episodes: {n_predictable}\n")
         f.write(
             f"Sepsis prevalence: "
             f"{septic_admissions / total_admissions:.4f}\n\n"
@@ -443,26 +276,28 @@ def write_cohort_log(
 
     return log_path
 
-def prep_dirs():
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+def prep_dirs(args):
+    # output dir
+    os.makedirs(os.path.dirname(args.output_dir), exist_ok=True)
+
+    # values dir
+    os.makedirs(os.path.join(args.output_dir, "set-a"), exist_ok=True)
+
     ## clear the data completely
-    for f in os.listdir(out_path):
-        os.remove(os.path.join(out_path, f))
+    ##for f in os.listdir(args.output_dir):
+    ##    os.remove(os.path.join(args.output_dir, f))
 
+def run_all(args):
+    os.chdir(r"C:\Users\Skyfinder\Projects\STraTS\src")
+    # clear old output and make sure the directories are set up
+    prep_dirs(args)
 
-os.chdir(r"C:\Users\Skyfinder\Projects\STraTS\src")
-# clear old output and make sure the directories are set up
-# prep_dirs()
+    # def pred window hours
+    pred_window_hours = 2
 
-## run
-paths = {
-    "features_file": os.path.join(r"..\data\custom\Matias", "output_1.1.csv"),
-    "output_dir": r"..\data\unprocessed\ml_health"
-}
+    create_outcomes(input_path = args.features_file, output_path = args.output_dir, debug = True)
 
-create_outcomes(input_path = paths["features_file"], output_path = paths["output_dir"], debug = True)
-
-process_values(input_path = paths["features_file"], out_path = r"..\data\unprocessed\ml_health\set-a", debug = True)
+    process_values(input_path = args.features_file, out_path = args.output_dir, pred_window_hours=pred_window_hours, debug = True)
 
 '''
 log_file = write_cohort_log(
@@ -470,3 +305,20 @@ log_file = write_cohort_log(
     paths=paths,
 )
 '''
+
+def parse_args() -> argparse.Namespace:
+    """Function to parse arguments."""
+    parser = argparse.ArgumentParser()
+
+    # dataset related arguments
+    parser.add_argument('--features_file', type=str, default=r'..\data\custom\Matias\output_1.1.csv')
+    parser.add_argument('--output_dir', type=str, default=r"..\data\unprocessed\ml_health")
+    parser.add_argument('--pred_window_hours', type=int, default=0)
+
+    args = parser.parse_args()
+    return args
+
+if __name__ == "__main__":
+    # Preliminary setup.
+    args = parse_args()
+    run_all(args)

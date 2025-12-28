@@ -1,6 +1,6 @@
 from tqdm import tqdm
 import torch
-from sklearn.metrics import roc_auc_score, precision_recall_curve, auc
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, roc_curve
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -39,16 +39,28 @@ class Evaluator:
         # Add graphs and visualizations for inference split
         if split == 'infer':
             # Plot the ROC curve
+            fpr, tpr, roc_thresholds = roc_curve(true.cpu().numpy(),
+                                         pred.cpu().numpy())
             plt.figure()  
-            plt.plot(recall, precision, label='ROC curve (area = %0.2f)' % roc_auc)
+            plt.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % roc_auc)
             plt.plot([0, 1], [0, 1], 'k--', label='No Skill')
             plt.xlim([0.0, 1.0])
             plt.ylim([0.0, 1.05])
             plt.xlabel('False Positive Rate')
             plt.ylabel('True Positive Rate')
-            plt.title('ROC Curve for Breast Cancer Classification')
+            plt.title('ROC Curve for Sepsis Classification')
             plt.legend()
-            plt.savefig('../outputs/aumc/strats_final/roc.png')
+            plt.savefig(self.args.output_dir + f"/{self.args.dataset}_roc.png")
+            plt.close()
+
+            plt.figure()
+            plt.plot(recall, precision, label='PR curve (area = %0.2f)' % pr_auc)
+            plt.xlabel('Recall')
+            plt.ylabel('Precision')
+            plt.title('Precision-Recall Curve for Sepsis Classification')
+            plt.legend()
+            plt.savefig(self.args.output_dir + f"/{self.args.dataset}_pr.png")
+            plt.close()
         
         return result
 
