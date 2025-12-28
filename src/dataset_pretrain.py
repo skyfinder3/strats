@@ -18,7 +18,7 @@ class PretrainDataset(Dataset):
             self.max_minute = 24*60
         elif args.dataset=='physionet_2012':
             self.max_minute = 48*60
-        elif args.dataset=='aumc':
+        elif 'aumc' in args.dataset.lower():
             # Timeframe set to 2 Days after admission
             self.max_minute = 48*60
             
