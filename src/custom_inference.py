@@ -11,7 +11,7 @@ from modeling_tcn import TCN_TS
 from modeling_sand import SAND
 from modeling_grud import GRUD_TS
 from modeling_interpnet import InterpNet
-from evaluator import Evaluator
+from evaluator_tmp import Evaluator
 from utils import Logger, set_all_seeds
 
 
