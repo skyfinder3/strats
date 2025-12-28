@@ -25,7 +25,6 @@ class Dataset:
             data = data.loc[(data.minute>=0)&(data.minute<=24*60)]
             data.loc[(data.variable=='Age')&(data.value>200), 'value'] = 91.4
         if 'aumc' in args.dataset.lower():
-            # TODO potentially add labelled data here if we can find some e.g. time till sepsis
             pass
 
             
