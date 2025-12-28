@@ -101,7 +101,7 @@ def run_all(args):
     # Store data.
     os.makedirs(args.output_dir, exist_ok=True)
     pickle.dump([ts, oc, train_ids, valid_ids, test_ids, infer_ids], 
-                open(os.path.join(args.output_dir, args.dataset_name, '.pkl'),'wb'))
+                open(os.path.join(args.output_dir, args.dataset_name + '.pkl'),'wb'))
 
 
 def parse_args() -> argparse.Namespace:
