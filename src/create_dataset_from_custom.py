@@ -302,11 +302,9 @@ def run_all(args):
     prep_dirs(args)
 
     # def pred window hours
-    pred_window_hours = 2
-
     create_outcomes(input_path = args.features_file, output_path = args.output_dir, debug = True)
 
-    process_values(input_path = args.features_file, out_path = args.output_dir, pred_window_hours=pred_window_hours, debug = True)
+    process_values(input_path = args.features_file, out_path = args.output_dir, pred_window_hours=args.pred_window_hours, debug = True)
 
 '''
 log_file = write_cohort_log(
