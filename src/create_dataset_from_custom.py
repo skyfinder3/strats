@@ -109,7 +109,7 @@ def process_values(
                 required_values[var] = val
             
             if var == "height_static":
-                required_values["Height"] = val
+                required_values["Height"] = 165
             elif var in required_vars and var != "AdmissionID":
                 required_values[var] = val
 
@@ -297,7 +297,7 @@ def prep_dirs(args):
     ##    os.remove(os.path.join(args.output_dir, f))
 
 def run_all(args):
-    os.chdir(r"C:\Users\skyfi\projects\strats\src")
+    os.chdir(r"C:\Users\Skyfinder\Projects\STraTS\src")
     # clear old output and make sure the directories are set up
     prep_dirs(args)
 
