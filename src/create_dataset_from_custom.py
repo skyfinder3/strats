@@ -37,10 +37,14 @@ def process_values(
         utc=True
     )
 
-    df_values["visit_start_datetime"] = pd.to_datetime(
-        df_values["visit_start_datetime"],
-        errors="coerce",
-        utc=True
+    # extract admission time
+    df_admission_start_time = df_values[df_values['variable_name'] == 'admission_start']
+    # get a time map for admission start
+    admission_time_map = dict(
+        zip(
+            df_admission_start_time["visit_occurrence_id"],
+            df_admission_start_time["event_datetime"]
+        )
     )
 
     # --- Get sepsis labels ---
@@ -67,7 +71,7 @@ def process_values(
 
         g = g.sort_values(by='event_datetime', ascending=True)
         
-        t0 = g["visit_start_datetime"].iloc[0]
+        t0 = admission_time_map[visit_id]
 
         if visit_id in sepsis_time_map:
             t_end = t0 + timedelta(hours=sepsis_time_map[visit_id] - pred_window_hours)
@@ -77,13 +81,12 @@ def process_values(
         rows = []
 
         # --- Static variables --- first
-        required_vars = ["AdmissionID", "Age", "Gender", "Height", "Weight"]
+        required_vars = ["AdmissionID", "Age", "Gender", "Height"]
         required_values = {
             "AdmissionID": visit_id,
             "Age": 18,     # TODO update once in the data
             "Gender": -1,
             "Height": 165,  # TODO update once in the data
-            "Weight": 1    # TODO update once in the data 
         }
 
         for _, row in g.iterrows():
@@ -100,10 +103,16 @@ def process_values(
             elif var in required_vars and var != "AdmissionID":
                 required_values[var] = val
             
-            if var == "weight_static":
-                required_values["Weight"] = val
+            if var == "age":
+                required_values["Age"] = val
             elif var in required_vars and var != "AdmissionID":
                 required_values[var] = val
+            
+            if var == "height_static":
+                required_values["Height"] = val
+            elif var in required_vars and var != "AdmissionID":
+                required_values[var] = val
+
 
         # append static values first with 00:00 time
         for var in required_vars:
@@ -113,7 +122,7 @@ def process_values(
         for _, row in g.iterrows():
             # skip static variables
             var = row["variable_name"]
-            if var in required_vars or var == "female_static" or var == "weight_static":
+            if var in required_vars or var == "female_static" or var == "height_static" or var == "age":
                 continue
             
             # get date time of event
@@ -288,7 +297,7 @@ def prep_dirs(args):
     ##    os.remove(os.path.join(args.output_dir, f))
 
 def run_all(args):
-    os.chdir(r"C:\Users\Skyfinder\Projects\STraTS\src")
+    os.chdir(r"C:\Users\skyfi\projects\strats\src")
     # clear old output and make sure the directories are set up
     prep_dirs(args)
 
