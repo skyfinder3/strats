@@ -1,3 +1,6 @@
 data
 outputs
 src/__pycache__
+
+# ignore venv
+strats/
