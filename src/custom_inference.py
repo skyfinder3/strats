@@ -5,7 +5,7 @@ from tqdm import tqdm
 
 import dataset
 from dataset import Dataset
-from modeling_strats import Strats
+from modeling_strats_tmp import Strats
 from modeling_gru import GRU_TS
 from modeling_tcn import TCN_TS
 from modeling_sand import SAND
