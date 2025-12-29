@@ -1,6 +1,7 @@
 from tqdm import tqdm
 import torch
-from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, roc_curve
+from sklearn.metrics import roc_auc_score, precision_recall_curve, auc, roc_curve, brier_score_loss, precision_score
+from sklearn.calibration import calibration_curve
 import numpy as np
 import matplotlib.pyplot as plt
 import os
@@ -8,6 +9,19 @@ import os
 class Evaluator:
     def __init__(self, args):
         self.args = args
+
+    @staticmethod
+    def expected_calibration_error(y_true, y_prob, n_bins=10):
+        bins = np.linspace(0, 1, n_bins + 1)
+        bin_ids = np.digitize(y_prob, bins) - 1
+        ece = 0.0
+        for i in range(n_bins):
+            mask = bin_ids == i
+            if mask.sum() > 0:
+                acc = y_true[mask].mean()
+                conf = y_prob[mask].mean()
+                ece += np.abs(acc - conf) * mask.mean()
+        return ece
 
     def evaluate(self, model, dataset, split, train_step):
         self.args.logger.write('\nEvaluating on split = ' + split)
@@ -73,23 +87,38 @@ class Evaluator:
                     pred.append(logits.cpu())
 
         # Concatenate true labels and predictions
-        true = torch.cat(true)
-        pred = torch.cat(pred)
+        true = torch.cat(true).cpu().numpy()
+        pred = torch.cat(pred).cpu().numpy()
 
-        # Compute metrics
+        # ======================
+        # Core metrics
+        # ======================
         precision, recall, _ = precision_recall_curve(true, pred)
         pr_auc = auc(recall, precision)
         minrp = np.minimum(precision, recall).max()
         roc_auc = roc_auc_score(true, pred)
-        result = {'auroc': roc_auc, 'auprc': pr_auc, 'minrp': minrp}
+        brier = brier_score_loss(true, pred)
+        ece = self.expected_calibration_error(true, pred)
+        pred_labels = (pred >= 0.5).astype(int)
+        ppv = precision_score(true, pred_labels)
+
+        result = {
+            'auroc': roc_auc,
+            'auprc': pr_auc,
+            'minrp': minrp,
+            'brier': brier,
+            'ece': ece,
+            'ppv': ppv
+        }
 
         if train_step is not None:
             self.args.logger.write(
-                'Result on ' + split + ' split at train step '
-                + str(train_step) + ': ' + str(result)
+                f"Result on {split} split at train step {train_step}: {result}"
             )
 
-        # Inference split: plot ROC/PR and save interpretable outputs
+        # ======================
+        # Inference split: plot ROC/PR, histograms, calibration, save interpretable outputs
+        # ======================
         if split == 'infer' and self.args.model_type == 'istrats':
             if all_obs_contrib:  # only if collected
                 obs_contrib = torch.cat(all_obs_contrib, dim=0)
@@ -124,13 +153,11 @@ class Evaluator:
                     "var_counts": counts,
                 }, os.path.join(self.args.output_dir, f"{self.args.dataset}_istrats_interpret_infer.pt"))
 
-            # Plot ROC curve
-            fpr, tpr, _ = roc_curve(true.cpu().numpy(), pred.cpu().numpy())
+            # ROC curve
+            fpr, tpr, _ = roc_curve(true, pred)
             plt.figure()
-            plt.plot(fpr, tpr, label='ROC curve (area = %0.2f)' % roc_auc)
+            plt.plot(fpr, tpr, label=f'ROC curve (area = {roc_auc:.2f})')
             plt.plot([0, 1], [0, 1], 'k--', label='No Skill')
-            plt.xlim([0.0, 1.0])
-            plt.ylim([0.0, 1.05])
             plt.xlabel('False Positive Rate')
             plt.ylabel('True Positive Rate')
             plt.title('ROC Curve for Sepsis Classification')
@@ -138,14 +165,37 @@ class Evaluator:
             plt.savefig(os.path.join(self.args.output_dir, f"{self.args.dataset}_roc.png"))
             plt.close()
 
-            # Plot Precision-Recall curve
+            # PR curve
             plt.figure()
-            plt.plot(recall, precision, label='PR curve (area = %0.2f)' % pr_auc)
+            plt.plot(recall, precision, label=f'PR curve (area = {pr_auc:.2f})')
             plt.xlabel('Recall')
             plt.ylabel('Precision')
             plt.title('Precision-Recall Curve for Sepsis Classification')
             plt.legend()
             plt.savefig(os.path.join(self.args.output_dir, f"{self.args.dataset}_pr.png"))
+            plt.close()
+
+            # Prediction histograms
+            plt.figure(figsize=(8, 5))
+            plt.hist(pred[true == 0], bins=50, alpha=0.6, label='Negative', density=True)
+            plt.hist(pred[true == 1], bins=50, alpha=0.6, label='Positive', density=True)
+            plt.xlabel('Predicted Probability')
+            plt.ylabel('Density')
+            plt.title('Prediction Distribution')
+            plt.legend()
+            plt.savefig(os.path.join(self.args.output_dir, f"{self.args.dataset}_hist.png"))
+            plt.close()
+
+            # Reliability diagram
+            prob_true, prob_pred = calibration_curve(true, pred, n_bins=10)
+            plt.figure()
+            plt.plot(prob_pred, prob_true, marker='o', label='Model')
+            plt.plot([0, 1], [0, 1], 'k--', label='Perfect')
+            plt.xlabel('Mean predicted probability')
+            plt.ylabel('Fraction of positives')
+            plt.title('Reliability Diagram')
+            plt.legend()
+            plt.savefig(os.path.join(self.args.output_dir, f"{self.args.dataset}_calibration.png"))
             plt.close()
 
         return result

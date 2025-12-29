@@ -5,7 +5,7 @@ import numpy as np
 # load interpretability output
 # -----------------------------
 d = torch.load(
-    r"C:\Users\skyfi\projects\strats\outputs\aumc\istrats_final\aumc-4_istrats_interpret_infer.pt"
+    r"C:\Users\skyfi\projects\strats\outputs\aumc-4\istrats_final\aumc_istrats_interpret_infer.pt"
 )
 var_mean_contrib = d["var_mean_contrib"].cpu().numpy()
 
