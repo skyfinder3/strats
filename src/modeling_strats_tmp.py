@@ -8,6 +8,7 @@ import numpy as np
 
 
 
+
 class CVE(nn.Module):
     def __init__(self, args):
         super().__init__()
@@ -134,90 +135,123 @@ class Strats(TimeSeriesModel):
         self.fusion_att = FusionAtt(args)
         self.dropout = args.dropout
         self.V = args.V
-        
 
     def forward(self, values, times, varis, obs_mask, demo,
                 labels=None, forecast_values=None, forecast_mask=None, return_interpret=False):
+
+        # ---- SAFE DEFAULTS (important) ----
+        demo_contrib = None
+        obs_contrib = None
+        att = None
+
         bsz, max_obs = values.size()
         device = values.device
+
         if self.training:
             with torch.no_grad():
-                var_mask = (torch.rand((bsz,self.V), device=device)<=self.dropout).int()
+                var_mask = (torch.rand((bsz, self.V), device=device) <= self.dropout).int()
                 for v in range(self.V):
-                    mask_pos = (varis==v).int()*var_mask[:,v:v+1]
-                    obs_mask = obs_mask*(1-mask_pos)
+                    mask_pos = (varis == v).int() * var_mask[:, v:v+1]
+                    obs_mask = obs_mask * (1 - mask_pos)
 
         # demographics embedding
-        demo_emb = self.demo_emb(demo) if self.args.model_type=='strats' \
-                    else demo
+        demo_emb = self.demo_emb(demo) if self.args.model_type == 'strats' else demo
+
         # initial triplet embedding
         time_emb = self.cve_time(times)
         value_emb = self.cve_value(values)
-        # value_emb = 0
-        # for i in range(self.args.V):
-        #     value_emb = value_emb + self.cve_value[i](values) * (varis==i)
         vari_emb = self.variable_emb(varis)
-        triplet_emb = time_emb+value_emb+vari_emb
+
+        triplet_emb = time_emb + value_emb + vari_emb
         triplet_emb = F.dropout(triplet_emb, self.dropout, self.training)
-        # contextual triplet emb
-        contextual_emb = self.transformer(triplet_emb, obs_mask) 
+
+        # contextual triplet embedding
+        contextual_emb = self.transformer(triplet_emb, obs_mask)
+
         # fusion attention
-        attention_weights = self.fusion_att(contextual_emb, obs_mask)[:,:,None]
-        if self.args.model_type=='istrats':
-            ts_emb = (triplet_emb*attention_weights).sum(dim=1)
+        attention_weights = self.fusion_att(contextual_emb, obs_mask)[:, :, None]
+        att = attention_weights.squeeze(-1)
+
+        if self.args.model_type == 'istrats':
+            ts_emb = (triplet_emb * attention_weights).sum(dim=1)
         else:
-            ts_emb = (contextual_emb*attention_weights).sum(dim=1)
-        # concat demo and ts_emb
+            ts_emb = (contextual_emb * attention_weights).sum(dim=1)
+
+        # concat demo + ts
         ts_demo_emb = torch.cat((ts_emb, demo_emb), dim=-1)
-        # prediction/loss
+
+        # prediction
         if self.pretrain:
             return self.forecast_final(ts_demo_emb, forecast_values, forecast_mask)
-        logits = self.binary_head(self.forecast_head(ts_demo_emb))[:,0] \
-                    if self.finetune else self.binary_head(ts_demo_emb)[:,0]
+
+        if self.finetune:
+            binary_in = self.forecast_head(ts_demo_emb)
+        else:
+            binary_in = ts_demo_emb
+
+        logits = self.binary_head(binary_in)[:, 0]
+
         if not return_interpret:
             return self.binary_cls_final(logits, labels)
-        
-        ## interpretable contributions for I-Strats
 
-        if self.args.model_type=='istrats' and return_interpret:
+        # ======================================================
+        # INTERPRETABLE OUTPUTS (FINETUNE-INDEPENDENT, INFER-ONLY)
+        # ======================================================
+        if self.args.model_type == 'istrats':
             with torch.no_grad():
-                # sigmoid prediction
                 probs = torch.sigmoid(logits)
-                # get final linear weights w_o (shape: D + d,) and bias
-                # binary_head is Linear(in_features=ts_demo_emb_size, out_features=1)
-                w_o = self.binary_head.weight.squeeze(0)  # (D + d,)
+
+                w_o = self.binary_head.weight.squeeze(0)  # (F,)
                 b_o = self.binary_head.bias.squeeze(0)
 
-                D = self.args.D  # size of demo vector
-                # split weights into demo and triplet parts
-                w_demo = w_o[:D]          # (D,)
-                w_trip = w_o[D:]          # (d,)
+                # -------- Exact I-STraTS (no finetune) --------
+                if not self.finetune:
+                    D = demo_emb.shape[1]
+                    w_demo = w_o[:D]
+                    w_ts = w_o[D:]  # (d,)
 
-                # contribution of demographics per sample: B
-                demo_contrib = (demo_emb * w_demo).sum(dim=1)
+                    demo_contrib = (demo_emb * w_demo[None, :]).sum(dim=1)
+                    inner = (triplet_emb * w_ts[None, None, :]).sum(dim=2)
+                    obs_contrib = att * inner
 
-                # per-observation contribution: B x N
-                # for istrats, time-series embedding is sum_i alpha_i * e_i
-                # contribution_i = alpha_i * <w_trip, triplet_emb_i>
-                inner = (triplet_emb * w_trip[None, None, :]).sum(dim=2)  # (B, N)
-                att = attention_weights.squeeze(-1) 
+                # -------- Approximate (finetuned, inference-safe) --------
+                else:
+                    # -------- Approximate attribution (finetune-safe) --------
+                    # Project using ts_emb space, not binary_head space
 
-                obs_contrib = att * inner   
+                    # Recover TS dimension
+                    d = triplet_emb.shape[2]   # hid_dim
 
-                ts_contrib = obs_contrib.sum(dim=1)
-            
-            # return dict in eval for interpretability
-            if labels is not None:
-                loss = F.binary_cross_entropy_with_logits(logits, labels, pos_weight=self.pos_class_weight)
-            else:
-                loss = None
+                    # Use a pseudo weight by back-projecting through forecast_head
+                    # (linear attribution approximation)
+                    Wf = self.forecast_head.weight        # (F', D + d)
+                    Wb = self.binary_head.weight          # (1, F')
 
-            return {
-                "loss": loss,
-                "logits": logits,
-                "probs": probs,
-                "demo_contrib": demo_contrib,
-                "obs_contrib": obs_contrib,      # (B, N)
-                "att_weights": att,              # (B, N)
-                "ts_contrib": ts_contrib         # (B,)
-            }
+                    # Effective TS weight: w_eff = Wb @ Wf
+                    w_eff = torch.matmul(Wb, Wf)          # (1, D + d)
+                    w_ts = w_eff[0, -d:]                  # (d,)
+
+                    inner = (triplet_emb * w_ts[None, None, :]).sum(dim=2)
+                    obs_contrib = att * inner
+                    demo_contrib = None
+
+
+        else:
+            probs = torch.sigmoid(logits)
+
+        # loss
+        if labels is not None:
+            loss = F.binary_cross_entropy_with_logits(
+                logits, labels, pos_weight=self.pos_class_weight
+            )
+        else:
+            loss = None
+
+        return {
+            "loss": loss,
+            "logits": logits,
+            "probs": probs,
+            "demo_contrib": demo_contrib,
+            "obs_contrib": obs_contrib,
+            "att_weights": att,
+        }
