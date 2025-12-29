@@ -50,6 +50,15 @@ if visit_occurence_id in sepsis_time_map:
 else:
     t_end = admission_time + timedelta(hours=14 * 24) # 14 day max
 
+
+PLOT_VARIABLES = [
+    "wbc", "dbp", "ca", "hbco", "plt", "o2sat",
+    "bicar", "hr", "po2", "ph", "temp",
+    "bili", "pt", "lact", "ptt"
+]
+
+df_values = df_values[df_values["variable_name"].isin(PLOT_VARIABLES)]
+
 rows = []
 for _, row in df_values.iterrows():
     dt = row["event_datetime"]
@@ -111,7 +120,7 @@ if visit_occurence_id in sepsis_time_map:
 
 plt.xlabel("Time since admission (minutes)")
 plt.ylabel("Value")
-plt.title("Staircase Plot of Variables Over Time")
+plt.title("Admission 20 Variables Over Time")
 plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
 plt.tight_layout()
 plt.show()
